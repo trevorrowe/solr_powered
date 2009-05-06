@@ -1,0 +1,10 @@
+- look into :multi_valued, what it actually does / does not do
+  - multi_valued fields are not sortable
+  - we could auto guess it based off the association type
+  - if its not a multivalued field and we index many values what happens
+    to the rest, ignored? replace the previous? ???
+- wrap all db transactions in a solr transaction
+- make it safe to wrap solr transactions in other solr transactions
+  - would it be smart (once this works) to wrap all auto_solr_nnnn methods
+    in a transaction?
+- write tests

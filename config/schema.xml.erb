@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schema name="solr_powered" version="1.0">
+  <uniqueKey>solr_id</uniqueKey>
+  <defaultSearchField><%= default_search_field %></defaultSearchField>
+  <solrQueryParser defaultOperator="<%= default_operator %>"/>
+  <types>
+    <fieldType name="boolean" class="solr.BoolField" omitNorms="true" sortMissingLast="true"/>
+    <fieldType name="integer" class="solr.IntField" omitNorms="true"/>
+    <fieldType name="sint" class="solr.SortableIntField" omitNorms="true" sortMissingLast="true"/>
+    <fieldType name="long" class="solr.LongField" omitNorms="true"/>
+    <fieldType name="slong" class="solr.SortableLongField" omitNorms="true" sortMissingLast="true"/>
+    <fieldType name="float" class="solr.FloatField" omitNorms="true"/>
+    <fieldType name="sfloat" class="solr.SortableFloatField" omitNorms="true" sortMissingLast="true"/>
+    <fieldType name="double" class="solr.DoubleField" omitNorms="true"/>
+    <fieldType name="sdouble" class="solr.SortableDoubleField" omitNorms="true" sortMissingLast="true"/>
+    <fieldType name="date" class="solr.DateField" omitNorms="true" sortMissingLast="true"/>
+    <fieldType name="string" class="solr.StrField" omitNorms="true" sortMissingLast="true"/>
+    <fieldType name="text" class="solr.TextField" positionIncrementGap="100">
+      <analyzer type="index">
+        <tokenizer class="solr.WhitespaceTokenizerFactory"/>
+        <filter class="solr.StopFilterFactory"/>
+        <filter class="solr.WordDelimiterFilterFactory" splitOnCaseChange="1" generateWordParts="1" catenateWords="1" catenateNumbers="1" catenateAll="1"/>
+        <filter class="solr.LowerCaseFilterFactory"/>
+        <filter class="solr.EnglishPorterFilterFactory"/>
+        <filter class="solr.RemoveDuplicatesTokenFilterFactory"/>
+      </analyzer>
+      <analyzer type="query">
+        <tokenizer class="solr.WhitespaceTokenizerFactory"/>
+        <filter class="solr.StopFilterFactory"/>
+        <filter class="solr.WordDelimiterFilterFactory" splitOnCaseChange="1" generateWordParts="1" catenateWords="1" catenateNumbers="1" catenateAll="1"/>
+        <filter class="solr.LowerCaseFilterFactory"/>
+        <filter class="solr.EnglishPorterFilterFactory"/>
+        <filter class="solr.RemoveDuplicatesTokenFilterFactory"/>
+      </analyzer>
+    </fieldType>
+    <fieldType name="ngram_text" class="solr.TextField" positionIncrementGap="100">
+      <analyzer type="index">
+        <tokenizer class="solr.NGramTokenizerFactory" maxGramSize="15" minGramSize="3"/>
+        <filter class="solr.WordDelimiterFilterFactory" splitOnCaseChange="1" generateWordParts="1" catenateWords="1" catenateNumbers="1" catenateAll="1"/>
+        <filter class="solr.LowerCaseFilterFactory"/>
+        <filter class="solr.EnglishPorterFilterFactory"/>
+        <filter class="solr.RemoveDuplicatesTokenFilterFactory"/>
+      </analyzer>
+      <analyzer type="query">
+        <tokenizer class="solr.WhitespaceTokenizerFactory"/>
+        <filter class="solr.StopFilterFactory"/>
+        <filter class="solr.WordDelimiterFilterFactory" splitOnCaseChange="1" generateWordParts="1" catenateWords="1" catenateNumbers="1" catenateAll="1"/>
+        <filter class="solr.LowerCaseFilterFactory"/>
+        <filter class="solr.EnglishPorterFilterFactory"/>
+        <filter class="solr.RemoveDuplicatesTokenFilterFactory"/>
+      </analyzer>
+    </fieldType>
+    <fieldType name="alphaOnlySort" class="solr.TextField" omitNorms="true" sortMissingLast="true">
+      <analyzer type="index">
+        <tokenizer class="solr.KeywordTokenizerFactory"/>
+        <filter class="solr.LowerCaseFilterFactory"/>
+        <filter class="solr.TrimFilterFactory"/>
+        <filter replace="all" class="solr.PatternReplaceFilterFactory" pattern="([^a-z])" replacement=""/>
+      </analyzer>
+      <analyzer type="query">
+        <tokenizer class="solr.KeywordTokenizerFactory"/>
+        <filter class="solr.LowerCaseFilterFactory"/>
+        <filter class="solr.TrimFilterFactory"/>
+        <filter replace="all" class="solr.PatternReplaceFilterFactory" pattern="([^a-z])" replacement=""/>
+      </analyzer>
+    </fieldType>
+  </types>
+  <fields>
+    <!-- solr_powered defined and required fields -->
+    <field name="solr_id" type="string" multi_valued="false" required="true" indexed="true" stored="true"/>
+    <field name="solr_type" type="string" multi_valued="false" required="true" indexed="true" stored="false"/>
+    <field name="<%= default_search_field %>" type="<%= default_search_field_type %>" multi_valued="true" required="false" indexed="true" stored="false" />
+    <!-- user defined fields -->
+<%= fields.join("\n") %>
+  </fields>
+  <!-- user defined copy field rules -->
+<%= copy_fields.join("\n") %>
+</schema>
