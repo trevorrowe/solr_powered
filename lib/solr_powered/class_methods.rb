@@ -245,7 +245,6 @@ module SolrPowered::ClassMethods
     self.solr_powered = true
   end
 
-
   # Options:
   #
   # * :as - (defaults to the parameter assoc_name)
@@ -285,8 +284,10 @@ module SolrPowered::ClassMethods
     # TODO   has_and_belongs_to_many associations.
     if association.options[:dependent] == :delete_all
       callback = proc{|o1,o2| 
-        SolrPowered.add(o1.solr_document) 
-        SolrPowered.delete(o2) if o2.class.solr_powered?
+        if SolrPowered.auto_index
+          SolrPowered.add(o1.solr_document) 
+          SolrPowered.delete(o2) if o2.class.solr_powered?
+        end
       }
       if association.options[:after_remove]
         old_callbacks = Array(association.options[:after_remove])
@@ -319,10 +320,12 @@ module SolrPowered::ClassMethods
       return_association = case association.macro
         when :has_one, :has_many
           self.to_s.downcase.to_sym
-        when :belongs_to
+        when :belongs_to, :has_and_belongs_to_many
           # this default could be incorrect if the belongs to maps to 
           # a has_one reverse association instead of a has_many
           self.to_s.underscore.pluralize.to_sym
+        else
+          raise "oops, shouldn't get here"
       end
     end
 
