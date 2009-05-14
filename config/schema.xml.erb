@@ -4,6 +4,7 @@
   <defaultSearchField><%= default_search_field %></defaultSearchField>
   <solrQueryParser defaultOperator="<%= default_operator %>"/>
   <types>
+    <fieldType name="random" class="solr.RandomSortField" indexed="true" />
     <fieldType name="boolean" class="solr.BoolField" omitNorms="true" sortMissingLast="true"/>
     <fieldType name="integer" class="solr.IntField" omitNorms="true"/>
     <fieldType name="sint" class="solr.SortableIntField" omitNorms="true" sortMissingLast="true"/>
@@ -70,6 +71,8 @@
     <field name="solr_id" type="string" multi_valued="false" required="true" indexed="true" stored="true"/>
     <field name="solr_type" type="string" multi_valued="false" required="true" indexed="true" stored="false"/>
     <field name="<%= default_search_field %>" type="<%= default_search_field_type %>" multi_valued="true" required="false" indexed="true" stored="false" />
+    <dynamicField name="random_*" type="random" />
+
     <!-- user defined fields -->
 <%= fields.join("\n") %>
   </fields>
