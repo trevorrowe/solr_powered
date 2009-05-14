@@ -209,13 +209,17 @@ module SolrPowered::ClassMethods
       self.add_solr_document_method(as, attribute_name)
     end
 
-    self.add_solr_observed_attributes(*attribute_names)
     self.solr_powered = true
+    self.add_solr_observed_attributes(*attribute_names)
   end
 
+  # Options:
+  # 
+  # * :as - 
+  # * :attributes -
+  # * :associations - 
+  # * 
   def solr_method method_name, options = {}
-
-    as = options[:as] || method_name
 
     if options[:attributes]
       self.add_solr_observed_attributes(*Array(options[:attributes]))
@@ -240,9 +244,11 @@ module SolrPowered::ClassMethods
       end
     end
 
-    SolrPowered.add_index(as, index_options(options))
-    self.add_solr_document_method(as, method_name)
+    as = options[:as] || method_name
+
     self.solr_powered = true
+    self.add_solr_document_method(as, method_name)
+    SolrPowered.add_index(as, index_options(options))
   end
 
   # Options:
