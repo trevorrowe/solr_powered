@@ -306,7 +306,9 @@ module SolrPowered
     end
   end
 
-  def self.find query, options = {}
+  def self.find query, opts = {}
+
+    options = opts.dup
 
     ##
     ## RESPONSE FORMAT
