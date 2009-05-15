@@ -175,6 +175,8 @@ module SolrPowered
 
   def self.lql query
     case query
+      when :all
+        "*:*"
 
       when String
         query
