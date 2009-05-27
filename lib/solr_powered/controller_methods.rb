@@ -99,9 +99,9 @@ module SolrPowered::ControllerMethods
               args << value
 
           when 'in'
-            # TODO : test this
-            query << '(' + values.collect{|v| "#{field}:?" }.join (' OR ') + ')'
-            query += values
+            lql = '(' + values.collect{|v| "#{field}:?" }.join (' OR ') + ')'
+            query << lql
+            args += values
 
           else
             raise "unknown suffix type `#{suffix}` for hash_to_lql"
