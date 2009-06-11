@@ -1,3 +1,5 @@
+class SolrResponseError < Exception
+end
 
 # TODO : fix curl on monaco and get rid of rfuzz/client
 require 'rfuzz/client'
@@ -19,6 +21,8 @@ class SolrPowered::Client
     @port = options[:post] || 8982
     @path = options[:path] || 'solr'
     @auto_commit = options.has_key?(:auto_commit) ? options[:auto_commit] : true
+    @logger = ActiveRecord::Base.logger
+    @log_level = ActiveSupport::BufferedLogger::Severity::INFO
   end
 
   def select query = nil
@@ -149,7 +153,8 @@ class SolrPowered::Client
     log(action, Time.now - start, log_msg)
 
     unless response.http_status == '200'
-      raise response.http_body
+      response.http_body =~ /<pre>(.+)$/
+      raise SolrResponseError, "#{response.http_status}: #{$1}"
     end
 
     return response.http_body
@@ -159,6 +164,7 @@ class SolrPowered::Client
       err = "Solr#request unreachable to reach #{url}"
       err << "\nTry running rake solr:start" 
       raise err
+
 
 #     curl = Curl::Easy.new
 #     url = "http://#{@host}:#{@port}/#{@path}"
@@ -188,15 +194,11 @@ class SolrPowered::Client
   end
 
   def log action, time, msg
-
     color1 = "\x1b[1m\x1b[33m"
     color2 = "\x1b[39m"
     reset = "\x1b[0m"
-
-    log = "  #{color1}Solr #{action} (#{time})  #{color2}#{msg}#{reset}"
-    ActiveRecord::Base.logger.add(
-      ActiveSupport::BufferedLogger::Severity::DEBUG, log, 'SolrPowered')
-
+    log_msg = "  #{color1}Solr #{action} (#{time})  #{color2}#{msg}#{reset}"
+    @logger.add(@log_level, log_msg, 'solr_powered')
   end
 
   # Returns true if the solr server this client want to connect to 
