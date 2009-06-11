@@ -286,8 +286,6 @@ module SolrPowered::ClassMethods
     # Add association callbacks for :dependent => :delete_all associations
     # This allows solr powered to re-index when an observed association
     # has .clear called against it.
-    # TODO : we can add similar callback hooks which would allow us to support
-    # TODO   has_and_belongs_to_many associations.
     if association.options[:dependent] == :delete_all
       callback = proc{|o1,o2| 
         if SolrPowered.auto_index
