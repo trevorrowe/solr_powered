@@ -410,12 +410,14 @@ module SolrPowered
         
         sorted_ids = []
         ids_by_klass = {}
+        scores = {}
         objs = []
 
         # group the ids by class so we can perform exactly 1 activerecord
         # find per klass, instead of 1 find per id
         docs.each do |doc|
           solr_id = doc['solr_id'].first
+          scores[solr_id] = doc['score']
           klass_name = solr_id.split(/-/).first
           sorted_ids << solr_id
           ids_by_klass[klass_name] ||= []
@@ -438,6 +440,7 @@ module SolrPowered
         # active record .find call - it fails <=> on nil because index returns
         # nil in the block below
         docs = objs.sort_by{|obj| sorted_ids.index(obj.solr_id) }
+        docs.each{|doc| doc.solr_score = scores[doc.solr_id] }
 
       when 'document'
         docs = docs.collect{|doc| SolrPowered::Document.new(doc) }

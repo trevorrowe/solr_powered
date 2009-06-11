@@ -1,5 +1,9 @@
 module SolrPowered::InstanceMethods
 
+  def self.included base
+    base.send(:attr_accessor, :solr_score)
+  end
+
   # Returns a string containing this instance's class name and primary key
   # deliminated by a dash, e.g.
   #
