@@ -213,25 +213,28 @@ module SolrPowered::ClassMethods
     self.add_solr_observed_attributes(*attribute_names)
   end
 
+  # Creates a field in the solr index and configures this model to store the
+  # return value of *solr_method* in that field.
+  #
   # Options:
-  # 
-  # * :as - 
-  # * :attributes -
-  # * :associations - 
-  # * 
+  #
+  # * :as - The name of the solr index field, defaults to method_name
+  # * :attributes - Attributes on this model that trigger a solr reindex
+  #   when they are dirty on save.
+  # * :associations - Association hash (:name, :attributes, :return_association)
+  #   to watch.  When the observed association :name model saves with dirty 
+  #   :attributes it will retrigger a reindex of the :return_association.
+  #   :associations can be a single hash, or an array of hashes, but all must
+  #   provide :name, :attributes and :return_association.
+  # * TODO : document the other standard solr field options
+  #
   def solr_method method_name, options = {}
 
     if options[:attributes]
       self.add_solr_observed_attributes(*Array(options[:attributes]))
     end
 
-    if options[:associations]
-      unless options[:associations].is_a?(Array)
-        options[:associations] = [options[:associations]]
-      end
-    end
-
-    options[:associations].each do |assoc|
+    Array(options[:associations]).each do |assoc|
       if association = self.reflect_on_association(assoc[:name])
         self.add_solr_observer_to_association(
           association, 
@@ -268,7 +271,8 @@ module SolrPowered::ClassMethods
       raise "Unable to solr index #{assoc_name}, it has not been defined."
     end
 
-    unless [:has_many, :has_one, :belongs_to].include?(association.macro)
+    supported = [:has_many, :has_one, :belongs_to, :has_and_belongs_to_many]
+    unless supported.include?(association.macro)
       raise "SolrPowered does not support #{association.macro} associations."
     end
 
@@ -276,34 +280,42 @@ module SolrPowered::ClassMethods
       case association.macro
         when :belongs_to, :has_one
           options[:muti_valued] = false
-        when :has_many
+        when :has_many, :has_and_belongs_to_many
           options[:muti_valued] = true
       end
     end
 
     ## ADD ASSOCIATION CALLBACKS (as needed)
 
-    # Add association callbacks for :dependent => :delete_all associations
-    # This allows solr powered to re-index when an observed association
-    # has .clear called against it.
+    # :dependent => :delete_all + association#clear
+    #
+    # :depenedent => :delete_all associations normally execute direct sql
+    # deletes against the database when .clear is called against them.
+    # If this association is watched, then we need to add a callback on the
+    # association so we can reindex when .clear is called.
     if association.options[:dependent] == :delete_all
-      callback = proc{|o1,o2| 
+      add_association_callback(association, :after_remove, proc{|o1,o2|
         if SolrPowered.auto_index
           SolrPowered.add(o1.solr_document) 
           SolrPowered.delete(o2) if o2.class.solr_powered?
         end
-      }
-      if association.options[:after_remove]
-        old_callbacks = Array(association.options[:after_remove])
-        association.options[:after_remove] = [callback] + old_callbacks
-      else
-        association.options[:after_remove] = [callback]
-      end
-      association.active_record.send(
-        :add_association_callbacks,
-        association.name,
-        association.options
-      )
+        true
+      })
+    end
+
+    # has_and_belongs_to_many associations
+    #
+    # We  have to add callbacks for after_add and after_remove as there is
+    # no direct class to observe to watch for changes.
+    if association.macro == :has_and_belongs_to_many
+      add_association_callback(association, :after_add, proc{|o1,o2|
+        o1.solr_save if SolrPowered.auto_index
+        true
+      })
+      add_association_callback(association, :after_remove, proc{|o1,o2|
+        o1.solr_save if SolrPowered.auto_index
+        true
+      })
     end
 
     ## ADD INDEX COLUMN (field) TO SOLR
@@ -339,6 +351,7 @@ module SolrPowered::ClassMethods
       return_association
     )
 
+    # TODO : why is this here? should solr_assoc ever accpet local attributes?!?
     # allows solr_assoc to accept :attributes option (local attributes
     # to force reindexing by
     if attributes = options[:attributes]
@@ -443,6 +456,27 @@ module SolrPowered::ClassMethods
     unless self.solr_eager_loaded_associations.include?(name)
       self.solr_eager_loaded_associations << name
     end
+  end
+
+  # association - an relfected association
+  # hook        - :before_add, :after_add, :before_remove, :after_remove
+  # callback    - a proc to eval at the hook time, gets 2 params,
+  #               o1, o2, the parent object and the associated object
+  def add_association_callback association, hook, callback
+
+    if association.options[hook]
+      old_callbacks = Array(association.options[hook])
+      association.options[hook] = [callback] + old_callbacks
+    else
+      association.options[hook] = [callback]
+    end
+
+    association.active_record.send(
+      :add_association_callbacks,
+      association.name,
+      association.options
+    )
+
   end
 
 end
