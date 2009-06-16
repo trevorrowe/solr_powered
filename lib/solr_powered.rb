@@ -17,17 +17,31 @@
 
 module SolrPowered
 
-  ## constants
-
+  # installation path of this plugin
   PLUGIN_PATH = File.join(File.dirname(__FILE__), '..')
 
-  APACHE_SOLR_PATH = File.join(PLUGIN_PATH, 'apache_solr')
-
-  mattr_accessor :log_dir, :data_dir, :auto_index, :stop_port,
+  mattr_accessor :solr_path, :log_dir, :auto_index, :stop_port,
     :default_operator, :default_search_field, :default_search_field_type
 
   mattr_reader :host, :port, :path, :auto_commit, 
     :model_paths, :observers, :indexes
+
+  # installation path for apache solr
+  @@solr_path = File.join(Rails.root, 'solr')
+
+  # where the solr server keeps it logs
+  @@log_dir = File.join(Rails.root, 'log', 'solr', Rails.env)
+
+  # directories to scan for solr_powered models
+  @@model_paths = ["#{Rails.root}/app/models"]
+
+  ## solr schema values
+
+  @@default_operator = 'AND'
+
+  @@default_search_field = 'q'
+
+  @@default_search_field_type = 'text'
 
   ## client connection variables
 
@@ -46,22 +60,6 @@ module SolrPowered
   @@stop_port = 8981
 
   @@batching = false
-
-  ## pathing variables for models and logs
-
-  @@model_paths = ["#{Rails.root}/app/models"]
-
-  @@log_dir = "#{Rails.root}/log/solr"
-
-  @@data_dir = "#{Rails.root}/solr/#{Rails.env}"
-
-  ## solr schema values
-
-  @@default_operator = 'AND'
-
-  @@default_search_field = 'q'
-
-  @@default_search_field_type = 'text'
 
   ## solr meta data on indexes and observers
 
@@ -134,6 +132,10 @@ module SolrPowered
         add_indexed_model(klass)
       end
     }
+  end
+
+  def self.data_dir
+    File.join(self.solr_path, 'solr', 'data', Rails.env)
   end
 
   # Singleton http connection to the solr server, see SolrPowered::Client
