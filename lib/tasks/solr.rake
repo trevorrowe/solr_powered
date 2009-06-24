@@ -235,20 +235,12 @@ def schema_xml
   unless File.exists?(template_path)
     template_path = SolrPowered::PLUGIN_PATH + "/config/schema.xml.erb"
   end
-  
-  # variables for the template
-  default_operator = SolrPowered.default_operator
-  default_search_field = SolrPowered.default_search_field
-  default_search_field_type = SolrPowered.default_search_field_type
 
   fields = {}
   copy_fields = {}
 
   SolrPowered.indexes.each_value do |field|
     fields[field[:name]] = field_string(field)
-    if field[:copy_to_default]
-      copy_fields[field[:name]] = copy_field_string(field[:name], default_search_field)
-    end
     if field[:copy_to]
       copy_fields[:field[:name]] == copy_field_string(field[:name], field[:copy_to])
     end

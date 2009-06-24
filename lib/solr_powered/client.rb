@@ -152,9 +152,9 @@ class SolrPowered::Client
     log_msg = action == :select ? URI.unescape(msg) : msg
     log(action, Time.now - start, log_msg)
 
-    unless response.http_status == '200'
-      response.http_body =~ /<pre>(.+)$/
-      raise SolrResponseError, "#{response.http_status}: #{$1}"
+    status = response.http_status
+    unless status == '200'
+      raise SolrResponseError, "#{status}: #{response.http_body}"
     end
 
     return response.http_body

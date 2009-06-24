@@ -1,11 +1,10 @@
 class SolrPowered::Collection < Array
 
-  # TODO : provide a method for fetching the next page of search results
-  # TODO : include ActiveRecord::Base::Errors ???!?!
-  
+  # will_paginate compat. methods
   attr_reader :current_page, :per_page, :total_entries, :total_pages
 
-  attr_accessor :facets, :response
+  # solr specific methods
+  attr_accessor :response, :facets, :crumbs
 
   def initialize documents, current_page, per_page, total_entries
     self.replace(documents)

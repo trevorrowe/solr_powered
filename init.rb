@@ -1,6 +1,5 @@
 ActiveRecord::Base.send(:extend, SolrPowered::ClassMethods)
 ActiveRecord::Base.send(:include, SolrPowered::InstanceMethods)
-ActionController::Base.send(:include, SolrPowered::ControllerMethods)
 
 # This plugin attempts to preload all models.  It does this so we can:
 #

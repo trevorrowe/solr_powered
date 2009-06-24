@@ -115,19 +115,6 @@ module SolrPowered::ClassMethods
     end
   end
 
-  # A light wrapper around SolrPowered.find, this method scopes the
-  # find to documents from this model only.  See SolrPowered.find for
-  # more information.
-  def solr_find query, options = {}
-    query = SolrPowered.lql(query)
-    query = "(#{query}) AND solr_type:#{self.solr_type}"
-    SolrPowered.find(query, options)
-  end
-
-  def solr_find_ids query, options = {}
-    self.solr_find(query, options.merge(:format => 'ids'))
-  end
-
   # A class' solr_type is its class name as a string.  The solr_type is
   # used primarly when indexing and retrieving documents.
   def solr_type
@@ -374,7 +361,6 @@ module SolrPowered::ClassMethods
       :stored => false,
       :multi_valued => false,
       :required => false,
-      :copy_to_default => false,
       :copy_to => nil,
     }
     index_options = {}

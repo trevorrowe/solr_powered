@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schema name="solr_powered" version="1.0">
   <uniqueKey>solr_id</uniqueKey>
-  <defaultSearchField><%= default_search_field %></defaultSearchField>
-  <solrQueryParser defaultOperator="<%= default_operator %>"/>
+  <defaultSearchField>q</defaultSearchField>
+  <solrQueryParser defaultOperator="OR"/>
   <types>
     <fieldType name="random" class="solr.RandomSortField" indexed="true" />
     <fieldType name="boolean" class="solr.BoolField" omitNorms="true" sortMissingLast="true"/>
@@ -34,21 +34,16 @@
         <filter class="solr.RemoveDuplicatesTokenFilterFactory"/>
       </analyzer>
     </fieldType>
-    <fieldType name="ngram_text" class="solr.TextField" positionIncrementGap="100">
+    <fieldType name="lowercase" class="solr.TextField" omitNorms="true" sortMissingLast="true">
       <analyzer type="index">
-        <tokenizer class="solr.NGramTokenizerFactory" maxGramSize="15" minGramSize="3"/>
-        <filter class="solr.WordDelimiterFilterFactory" splitOnCaseChange="1" generateWordParts="1" catenateWords="1" catenateNumbers="1" catenateAll="1"/>
+        <tokenizer class="solr.KeywordTokenizerFactory"/>
         <filter class="solr.LowerCaseFilterFactory"/>
-        <filter class="solr.EnglishPorterFilterFactory"/>
-        <filter class="solr.RemoveDuplicatesTokenFilterFactory"/>
+        <filter class="solr.TrimFilterFactory"/>
       </analyzer>
       <analyzer type="query">
-        <tokenizer class="solr.WhitespaceTokenizerFactory"/>
-        <filter class="solr.StopFilterFactory"/>
-        <filter class="solr.WordDelimiterFilterFactory" splitOnCaseChange="1" generateWordParts="1" catenateWords="1" catenateNumbers="1" catenateAll="1"/>
+        <tokenizer class="solr.KeywordTokenizerFactory"/>
         <filter class="solr.LowerCaseFilterFactory"/>
-        <filter class="solr.EnglishPorterFilterFactory"/>
-        <filter class="solr.RemoveDuplicatesTokenFilterFactory"/>
+        <filter class="solr.TrimFilterFactory"/>
       </analyzer>
     </fieldType>
     <fieldType name="alphaOnlySort" class="solr.TextField" omitNorms="true" sortMissingLast="true">
@@ -70,7 +65,7 @@
     <!-- solr_powered defined and required fields -->
     <field name="solr_id" type="string" multi_valued="false" required="true" indexed="true" stored="true"/>
     <field name="solr_type" type="string" multi_valued="false" required="true" indexed="true" stored="false"/>
-    <field name="<%= default_search_field %>" type="<%= default_search_field_type %>" multi_valued="true" required="false" indexed="true" stored="false" />
+    <field name="q" type="text" multi_valued="true" required="false" indexed="true" stored="false" />
     <dynamicField name="random_*" type="random" />
 
     <!-- user defined fields -->

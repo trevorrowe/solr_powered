@@ -1,27 +1,9 @@
-
-# TODO : rfuzz/http_client does a lousey job of letting us know when the
-# TODO   response is anything but a 200.  Fix curl on monaco or fix rfuzz
-
-# TODO : cleanup the massize SolrPowered module.  Maybe break it up into a few
-# TODO   more specific modules/classes, maybe get rid of client configuraiton
-
-# TODO : improve escaping, right now it escapes 100% of solr special characters
-# TODO   which makes it difficult to allow the user to enter more powerful
-# TODO   search terms like "foo*"
-
-# TODO : more documentation
-
-# TODO : write tests
-
-# TODO : release!
-
 module SolrPowered
 
   # installation path of this plugin
   PLUGIN_PATH = File.join(File.dirname(__FILE__), '..')
 
-  mattr_accessor :solr_path, :log_dir, :auto_index, :stop_port,
-    :default_operator, :default_search_field, :default_search_field_type
+  mattr_accessor :solr_path, :log_dir, :auto_index, :stop_port
 
   mattr_reader :host, :port, :path, :auto_commit, 
     :model_paths, :observers, :indexes
@@ -34,14 +16,6 @@ module SolrPowered
 
   # directories to scan for solr_powered models
   @@model_paths = ["#{Rails.root}/app/models"]
-
-  ## solr schema values
-
-  @@default_operator = 'AND'
-
-  @@default_search_field = 'q'
-
-  @@default_search_field_type = 'text'
 
   ## client connection variables
 
@@ -88,6 +62,91 @@ module SolrPowered
   # development requirements.  If you hold a reference to a class object
   # it can cause issues.
   @@indexed_models = []
+
+  # SolrPowered.find is a thin wrapper around a call to select from a solr server.
+  # All select params are passed through unmodified to SolrPowered.client#select
+  # except the following:
+  # 
+  # * fl - field list, solr_id and score are selected.
+  # * wr - writer type, set to ruby
+  #
+  # The following are added as defaults if not set:
+  #
+  # * rows - the number of documents to return (limit), 10
+  # * start - the document offset, 0 
+  #
+  # Instead of returning a raw ruby hash as formated by the solr sever,
+  # SolrPowered.find fetches active record objects.  Any options passed
+  # are passed to the ActiveRecord::Base.find calls made to fetch these objets.
+  # This is useful for setting things like :include.
+  #
+  # TODO : finish documenting this method
+  def self.find select_params, options = {}
+
+    ## perform the search and get the ruby hash back
+
+    select = HashWithIndifferentAccess.new(select_params)
+    select['fl'] = 'solr_id,score'
+    select['wt'] = 'ruby'
+    select['rows'] ||= 10
+    select['start'] ||= 0
+
+    response = eval(SolrPowered.client.select(select))
+
+    ## parse the ruby response hash
+
+    scores = {}
+    sorted_solr_ids = []
+    ids_by_class = {}
+
+    response['response']['docs'].each do |doc|
+
+      solr_id = doc['solr_id'].first
+
+      # save its score so we can add it to its ActiveRecord obj after its found
+      # note: scores do not always indicate sort order
+      scores[solr_id] = doc['score']
+      
+      # keep the solr_ids sorted so we can order the active record objects
+      # we find by them
+      sorted_solr_ids << solr_id
+
+      # group docs by class so we can find them in groups instead of 1 at a time
+      class_name = solr_id.split(/-/).first
+      ids_by_class[class_name] ||= []
+      ids_by_class[class_name] << solr_id.split(/-/).last.to_i
+
+    end
+
+    ## find the active record objects in groups (1 find per class)
+
+    objs = []
+
+    ids_by_class.each_pair do |class_name,ids|
+      klass = class_name.constantize
+      objs += klass.find(ids, options.dup)
+      # TODO : handle ActiveRecord::RecordNotFound exceptions
+    end
+
+    ## populate object scores and sort them
+
+    objs = objs.sort_by{|obj| 
+      solr_id = obj.solr_id
+      obj.solr_score = scores[solr_id]
+      sorted_solr_ids.index(solr_id)
+    }
+
+    ## populate the will_paginate compat. collection
+
+    per_page = select['rows'].to_i
+    page = select['start'] / per_page + 1
+    total = response['response']['numFound']
+
+    collection = SolrPowered::Collection.new(objs, page, per_page, total)
+    collection.response = response
+    collection
+
+  end
 
   # Called by the solr_powered plugin's init.rb file.  This method will
   # attempt to locate all models for the application.  SolrPowered.model_paths
@@ -171,46 +230,6 @@ module SolrPowered
     @@path = path
   end
 
-  ##
-  ## building lql queries
-  ##
-
-  def self.lql query
-    case query
-      when :all
-        "*:*"
-
-      when String
-        query
-
-      when Array
-        parts = query.dup
-        lql = parts.shift
-        args = parts.collect{|part| 
-          if part.nil? or part.to_s == ''
-            '*:*'
-          elsif part.is_a?(Array)
-            '(' + part.collect{|term| self.escape_lucene(term) }.join(' OR ') + ')'
-          else
-            self.escape_lucene(part.to_s)
-          end
-        }
-        lql.gsub(/\?/, '%s') % args
-
-      when Hash
-        lql = []
-        args = []
-        query.each_pair do |field,value|
-          lql << "#{field}:?"
-          args << value
-        end
-        self.lql([lql.join(' AND '), *args])
-
-      else
-        raise "Don\'t know how to build lql from #{query.class}"
-    end
-  end
-
   # Lucene supports escaping special characters that are part of the query 
   # syntax. The current list special characters are:
   #
@@ -227,9 +246,6 @@ module SolrPowered
   def self.escape_lucene term
     term.to_s.gsub(/([+\-!(){}[\]\^"~*?:\\]|&&|\|\|)/, '\\\\\\1')
   end
-
-  # TODO : write an escape method that allows search modifiers pass through
-  # TODO   like *, -, !, (, ), etc
 
   ##
   ## tracking which classes are solr indexed
@@ -310,164 +326,6 @@ module SolrPowered
     end
   end
 
-  def self.find query, opts = {}
-
-    options = opts.dup
-
-    ##
-    ## RESPONSE FORMAT
-    ##
-
-    case options[:format].to_s
-      when 'active_record', ''
-        format = 'active_record'
-        fl = 'solr_id,score'
-      when 'document'
-        format = 'document'
-        fl = '*,score'
-      when 'hash'
-        format = 'hash'
-        fl = '*,score'
-      when 'ids'
-        format = 'ids'
-        fl = 'solr_id'
-      else
-        raise ArgumentError, "Invalid :format option `#{options[:format]}`"
-    end
-
-    select = {}
-
-    ##
-    ## FACETING
-    ##
-    
-    if options[:facets]
-
-      select[:facet] = true
-      select['facet.field'] = options[:facets]
-      select['facet.limit'] = -1
-      select['facet.missing'] = false
-      #select['facet.mincount'] = 2 # not working as understood
-      select['facet.zeros'] = false
-
-      facets = options[:facets]
-      options[:facets] = []
-    end
-
-    ##
-    ## PAGING
-    ##
-
-    # page number
-    page = options[:page]
-    page = 1 if page.blank?
-    page = page.to_i
-    unless page > 0
-      raise ArgumentError, ':page option must be blank or an integer > 0'
-    end
-
-    # per page
-    per_page = options[:per_page]
-    per_page = 10 if per_page.blank?
-    per_page = per_page.to_i
-    unless per_page.to_i > 0
-      raise ArgumentError, ':per_page option must be blank or an integer > 0'
-    end
-
-    # query offset
-    offset = ((page - 1) * per_page)
-
-    ##
-    ## SEARCH THE SOLR INDEX
-    ##
-
-    select.merge!({
-      :q => self.lql(query),
-      :start => offset,
-      :rows => per_page,
-      :sort => options[:sort],
-      :wt => 'ruby',
-      :fl => fl,
-    })
-
-    response = eval(client.select(select))
-
-    ##
-    ## PARSE RESPONSE
-    ##
-
-    docs = response['response']['docs']
-    total = response['response']['numFound']
-
-    case format
-
-      when 'ids'
-        # TODO : this collects a bunch of "solr_ids", which are
-        # TODO   encoded with the class-name prefix
-        # TODO : we should probably only allow selecting ids from
-        # TODO   the class level, not this level (it gets mixed)
-        docs = docs.collect{|doc| doc['solr_id'].first } 
-
-      when 'active_record' # default format
-        
-        sorted_ids = []
-        ids_by_klass = {}
-        scores = {}
-        objs = []
-
-        # group the ids by class so we can perform exactly 1 activerecord
-        # find per klass, instead of 1 find per id
-        docs.each do |doc|
-          solr_id = doc['solr_id'].first
-          scores[solr_id] = doc['score']
-          klass_name = solr_id.split(/-/).first
-          sorted_ids << solr_id
-          ids_by_klass[klass_name] ||= []
-          ids_by_klass[klass_name] << solr_id
-        end
-
-        # perform 1 find per class, then sort the collected results
-        find_opts = options[:find] || {}
-        ids_by_klass.each_pair do |klass_name,solr_ids|
-          klass = klass_name.constantize
-          ids = solr_ids.collect{|id| id.split(/-/).last }
-          # find modifieds the hash of find options passed in, so we have to dup
-          objs += klass.find(ids, find_opts.dup)
-          # TODO : rescue ActiveRecord::RecordNotFound and give a better excep
-        end
-
-        #raise docs.to_yaml + sorted_ids.to_yaml + ids_by_klass.to_yaml
-
-        # this can fail if the index returns an id not found by the above
-        # active record .find call - it fails <=> on nil because index returns
-        # nil in the block below
-        docs = objs.sort_by{|obj| sorted_ids.index(obj.solr_id) }
-        docs.each{|doc| doc.solr_score = scores[doc.solr_id] }
-
-      when 'document'
-        docs = docs.collect{|doc| SolrPowered::Document.new(doc) }
-
-      when 'hash'
-        # no processing required, the user requested solrs native
-        # response format w/out processing
-
-    end
-
-    collection = SolrPowered::Collection.new(docs, page, per_page, total)
-    collection.response = response
-
-    if options[:facets]
-      collection.facets = response['facet_counts']
-    end
-
-    collection
-
-  end
-
-  def self.find_ids query, options = {}
-    self.find(query, options.merge(:format => 'ids'))
-  end
-
   ##
   ## field methods
   ##
@@ -486,7 +344,6 @@ module SolrPowered
       :stored => false,
       :multi_valued => false,
       :required => false,
-      :copy_to_default => false,
       :copy_to => nil,
     }.merge(options)
 
