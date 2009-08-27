@@ -1,14 +1,9 @@
 class SolrResponseError < Exception
 end
 
-# TODO : fix curl on monaco and get rid of rfuzz/client
-require 'rfuzz/client'
-
-#require 'curl'
-
 class SolrPowered::Client
 
-  attr_accessor :host, :port, :path, :auto_commit
+  attr_accessor :host, :port, :path, :auto_commit, :patron
 
   # we have to strip certain control characters from data being sent to 
   # solr for indexing, if we don't solr chokes on the reqeust
@@ -17,12 +12,33 @@ class SolrPowered::Client
   BAD_REGEX = /[#{BAD_CHARS.join('')}]/u
 
   def initialize options = {}
+
     @host = options[:host] || 'localhost'
     @port = options[:post] || 8982
     @path = options[:path] || 'solr'
+
     @auto_commit = options.has_key?(:auto_commit) ? options[:auto_commit] : true
     @logger = ActiveRecord::Base.logger
     @log_level = ActiveSupport::BufferedLogger::Severity::INFO
+
+    @patron = Patron::Session.new
+    # TODO: there has to be a better way than ENV['TERM'] to find out if we are rebuilding the index, and need the extra time
+    @patron.timeout = ENV['TERM'].nil? ? 15 : 1800 
+    
+  end
+
+  def port= port
+    @port = port
+    set_base_url
+  end
+
+  def host= host
+    @host = host
+    set_base_url
+  end
+
+  def set_base_url
+    @patron.base_url = "http://#{@host}:#{@port}"
   end
 
   def select query = nil
@@ -128,69 +144,37 @@ class SolrPowered::Client
 
   def request action, msg, options = {}
 
-    fuzz = RFuzz::HttpClient.new(@host, @port)
     url = "/#{@path}/#{action}"
 
     start = Time.now
 
     case action
       when :update
-        content_type = 'text/xml; charset=utf-8'
-        response  = fuzz.post(url, 
-          :head => { 'Content-Type' => content_type },
-          #:body => msg.gsub(/[^[:print:]]/u, '') # strip non-printable characters
-          :body => msg.gsub(BAD_REGEX, '')
-        )
+        response  = @patron.post(url, msg.gsub(BAD_REGEX, ''), { 
+          'Content-Type' => 'text/xml; charset=utf-8',
+        })
       when :select
-        content_type = 'application/x-www-form-urlencoded; charset=utf-8'
-        response  = fuzz.get(url + '?' + msg,
-          :head => { 'Content-Type' => content_type }
-        )
+        response = @patron.get(url + '?' + msg, {
+          'Content-Type' => 'application/x-www-form-urlencoded; charset=utf-8',
+        })
       else
     end
 
     log_msg = action == :select ? URI.unescape(msg) : msg
     log(action, Time.now - start, log_msg)
 
-    status = response.http_status
-    unless status == '200'
-      raise SolrResponseError, "#{status}: #{response.http_body}"
+    unless response.status == 200
+      raise SolrResponseError, "#{response.status}: #{response.body}"
     end
 
-    return response.http_body
+    return response.body
 
-    rescue Errno::ECONNREFUSED
-      url = "http://#{@host}:#{@port}/#{@path}/#{action}"
+    rescue Patron::ConnectionFailed
+      url = "http://#{@host}:#{@port}#{url}"
       err = "Solr#request unreachable to reach #{url}"
       err << "\nTry running rake solr:start" 
       raise err
 
-
-#     curl = Curl::Easy.new
-#     url = "http://#{@host}:#{@port}/#{@path}"
-# 
-#     start = Time.now
-# 
-#     case action
-#       when :update
-#         curl.url = "#{url}/#{action}"
-#         curl.headers['Content-Type'] = 'text/xml; charset=utf-8'
-#         curl.http_post(msg)
-#       when :select
-#         curl.url = "#{url}/#{action}?#{msg}"
-#         curl.headers['Content-Type'] = 'application/x-www-form-urlencoded; charset=utf-8'
-#         curl.perform
-#       else
-#     end
-# 
-#     log(action, Time.now - start, msg)
-# 
-#     curl.body_str
-# 
-#     rescue Curl::Err::ConnectionFailedError
-#       err = "Solr#request unreachable to reach #{url}"
-#       err << "\nTry running rake solr:start" 
-#       raise err
   end
 
   def log action, time, msg
@@ -204,11 +188,12 @@ class SolrPowered::Client
   # Returns true if the solr server this client want to connect to 
   # is up and running, false otherwise.
   def responds?
-    fuzz = RFuzz::HttpClient.new(@host, @port)
-    fuzz.head("/#{@path}")
-    true
-    rescue Errno::ECONNREFUSED
+    begin
+      @patron.head("/#{@path}/")
+      true
+    rescue Patron::ConnectionFailed
       false
+    end
   end
 
 end
