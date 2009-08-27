@@ -288,23 +288,32 @@ module SolrPowered
     end
   end
 
-  def self.transaction &block
-    @@add = {}
-    @@remove = {}
-    @@batching = true
-    begin
-      yield 
-      client.add(*@@add.values)
-      client.delete(*@@remove.keys)
-    ensure
+  def self.batch &block
+    unless self.batching?
       @@add = {}
       @@remove = {}
-      @@batching = false
+    end
+    begin
+      @@batch_depth += 1
+      yield 
+    ensure
+      @@batch_depth -= 1
+      unless self.batching?
+        client.add(*@@add.values)
+        client.delete(*@@remove.keys)
+        @@add = {}
+        @@remove = {}
+      end
     end
   end
 
+  def self.batching?
+    @@batch_depth ||= 0
+    @@batch_depth > 0 
+  end
+
   def self.add *solr_document_hashes
-    if @@batching
+    if self.batching?
       solr_document_hashes.each do |document|
         solr_id = document['solr_id']
         @@add[solr_id] = document
@@ -316,7 +325,7 @@ module SolrPowered
   end
 
   def self.delete *solr_id_strings
-    if @@batching
+    if self.batching?
       solr_id_strings.each do |solr_id|
         @@remove[solr_id] = true
         @@add.delete(solr_id)
