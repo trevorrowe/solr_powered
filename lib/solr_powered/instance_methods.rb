@@ -194,8 +194,7 @@ module SolrPowered::InstanceMethods
     # 1. re-index anyone that uses this object as part of their index
     observers = []
     SolrPowered.observers_for(self.class).each do |observer|
-      assoc_objs = self.send(observer[:return_association])
-      assoc_objs = [assoc_objs] unless assoc_objs.is_a?(Array)
+      assoc_objs = Array(self.send(observer[:return_association]))
       assoc_objs.each do |obj|
         observers << obj.solr_document if obj.solr_saveable?
       end
