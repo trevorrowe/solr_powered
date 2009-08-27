@@ -179,7 +179,7 @@ class SolrPowered::DismaxQuery
   def apply_scoring_modifiers #:nodoc:
     SCORE_MODIFIERS.each_pair do |param,method|
       value = self.send(method)
-      @select[param] = value unless value.blank?  
+      @select[param] = URI.escape(value.to_s, '&%') unless value.blank?
     end
   end
 
