@@ -211,7 +211,7 @@ namespace :solr do
       $stderr.flush
       exit(1)
     end
-    FileUtils.rm_rf(SolrPowered.data_dir)
+    FileUtils.rm_rf(File.join(SolrPowered.data_dir, '*'))
   end
 
 end
