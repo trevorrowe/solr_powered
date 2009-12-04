@@ -150,12 +150,13 @@ class SolrPowered::DismaxQuery
     @select = {}
 
     self.filter_empty_params(@params)
+    @param_filters = self.parse_param_filters
+
+    self.apply_filters
     self.apply_scoring_modifiers
     self.apply_search_terms
     self.apply_paging_options
     self.apply_sorting_options
-    @param_filters = self.parse_param_filters
-    self.apply_filters
     self.apply_simple_facets
     self.apply_select
 
@@ -178,8 +179,10 @@ class SolrPowered::DismaxQuery
 
   def apply_scoring_modifiers #:nodoc:
     SCORE_MODIFIERS.each_pair do |param,method|
-      value = self.send(method)
-      @select[param] = URI.escape(value.to_s, '&%') unless value.blank?
+      values = Array(self.send(method))
+      values.each do |value|
+        @select[param] = URI.escape(value.to_s, '&%') unless value.blank?
+      end
     end
   end
 

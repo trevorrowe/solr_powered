@@ -22,8 +22,7 @@ class SolrPowered::Client
     @log_level = ActiveSupport::BufferedLogger::Severity::INFO
 
     @patron = Patron::Session.new
-    # TODO: there has to be a better way than ENV['TERM'] to find out if we are rebuilding the index, and need the extra time
-    @patron.timeout = ENV['TERM'].nil? ? 15 : 1800 
+    @patron.timeout = options[:timeout] || 15
     
   end
 
@@ -35,6 +34,10 @@ class SolrPowered::Client
   def host= host
     @host = host
     set_base_url
+  end
+
+  def timeout= timeout
+    @patron.timeout = timeout
   end
 
   def set_base_url
@@ -138,8 +141,10 @@ class SolrPowered::Client
   # optimize accepts the same optional params as commit.  See Solr#commit 
   # for more information.
   def optimize options = {}
-    attributes = options.collect{|k,v| "#{k}=\"#{v}\"" }.join(' ')
-    request(:update, "\n    <optimize #{attributes}/>")
+    SolrPowered.with_timeout(120) {
+      attributes = options.collect{|k,v| "#{k}=\"#{v}\"" }.join(' ')
+      request(:update, "\n    <optimize #{attributes}/>")
+    }
   end
 
   def request action, msg, options = {}

@@ -125,11 +125,16 @@ module SolrPowered::InstanceMethods
       documents << self.solr_document
     end
 
+    indexed_assocs = {}
     SolrPowered.observers_for(self.class).each do |observer|
-      assoc_objs = self.send(observer[:return_association])
-      assoc_objs = [assoc_objs] unless assoc_objs.is_a?(Array)
-      assoc_objs.each do |obj|
-        documents << obj.solr_document if obj.solr_saveable?
+      ra = observer[:return_assocation]
+      unless indexed_assocs[ra]
+        indexed_assocs[ra] = true
+        assoc_objs = self.send(observer[:return_association])
+        assoc_objs = [assoc_objs] unless assoc_objs.is_a?(Array)
+        assoc_objs.each do |obj|
+          documents << obj.solr_document if obj.solr_saveable?
+        end
       end
     end
 
@@ -167,12 +172,19 @@ module SolrPowered::InstanceMethods
     # Other models may be indexing this model via solr_association, so
     # even though this may not be a solr_powered and solr_saveable object
     # other objects might be interested in our changes:
+    indexed_assocs = {}
     SolrPowered.observers_for(self.class).each do |observer|
-      if observer[:observed_attributes].any?{|attr| dirty_attrs.include?(attr) }
-        assoc_objs = self.send(observer[:return_association])
-        assoc_objs = [assoc_objs] unless assoc_objs.is_a?(Array)
-        assoc_objs.each do |obj|
-          documents << obj.solr_document if obj.solr_saveable?
+      if observer[:observed_attributes].any?{|attr| dirty_attrs.include?(attr.to_s) }
+        ra = observer[:return_assocation]
+        unless indexed_assocs[ra]
+          indexed_assocs[ra] = true
+          # TODO : it would be nice to use find_each here instead of a standard
+          # find, but we need to know if its plural or not
+          assoc_objs = self.send(observer[:return_association])
+          assoc_objs = [assoc_objs] unless assoc_objs.is_a?(Array)
+          assoc_objs.each do |obj|
+            documents << obj.solr_document if obj.solr_saveable?
+          end
         end
       end
     end
@@ -193,10 +205,15 @@ module SolrPowered::InstanceMethods
 
     # 1. re-index anyone that uses this object as part of their index
     observers = []
+    indexed_assocs = {}
     SolrPowered.observers_for(self.class).each do |observer|
-      assoc_objs = Array(self.send(observer[:return_association]))
-      assoc_objs.each do |obj|
-        observers << obj.solr_document if obj.solr_saveable?
+      ra = observer[:return_assocation]
+      unless indexed_assocs[ra]
+        indexed_assocs[ra] = true
+        assoc_objs = Array(self.send(observer[:return_association]))
+        assoc_objs.each do |obj|
+          observers << obj.solr_document if obj.solr_saveable?
+        end
       end
     end
 

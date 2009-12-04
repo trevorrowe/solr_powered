@@ -3,7 +3,7 @@ module SolrPowered
   # installation path of this plugin
   PLUGIN_PATH = File.join(File.dirname(__FILE__), '..')
 
-  mattr_accessor :solr_path, :log_dir, :auto_index, :stop_port
+  mattr_accessor :solr_path, :log_dir, :auto_index, :stop_port, :timeout
 
   mattr_reader :host, :port, :path, :auto_commit, 
     :model_paths, :observers, :indexes
@@ -25,6 +25,8 @@ module SolrPowered
 
   @@port = 8982
 
+  @@timeout = 15
+
   @@path = 'solr'
 
   @@auto_commit = true
@@ -33,7 +35,11 @@ module SolrPowered
 
   @@stop_port = 8981
 
-  @@batching = false
+  ## batching
+
+  @@batch_add_stack = []
+
+  @@batch_remove_stack = []
 
   ## solr meta data on indexes and observers
 
@@ -179,18 +185,31 @@ module SolrPowered
     @@model_paths << path
   end
 
-  # Guesses obvious class names from their path on disk and then 
-  # constantizes the class to force Rails into loading it.  This 
-  # allows the class the opportunity to setup solr indexing.
+  # find models, and if they are solr_powered, registers them
   def self.preload_models_from_path path #:nodoc:
     #puts "SolrPowerd: loading models from #{path}"
-    Dir.glob("#{path.gsub(/\/$/, '')}/**/*.rb").each{|rb_file| 
-      klass = File.basename(rb_file).gsub(/\.rb$/, '').camelize.constantize
-      #puts " -- #{klass}"
+    Dir.glob("#{path.gsub(/\/$/, '')}/**/*.rb").each{|klass_path| 
+      klass = constantize_klass_path(path, klass_path)
+
       if klass.respond_to?('solr_powered') and klass.solr_powered?
         add_indexed_model(klass)
       end
     }
+  end
+
+  # Guesses obvious class names from their path on disk and then 
+  # constantizes the class to force Rails into loading it.  This 
+  # allows the class the opportunity to setup solr indexing.
+  #
+  # TODO: I wouldn't be at all surprised if something like this already exists 
+  # in Rails, find it and use it
+  def self.constantize_klass_path(base_path, klass_path)
+    klass_path.gsub!("#{base_path}", '')
+    klass_path = klass_path.split('/')
+    klass_path.delete('') # gets rid of empty element if klass_path started with /
+    klass_path.last.gsub!(/\.rb$/, '')
+    klass_path.collect!{|path| path.camelize}
+    klass_path.join('::').constantize
   end
 
   def self.data_dir
@@ -205,6 +224,7 @@ module SolrPowered
         :host => host,
         :port => port,
         :path => path,
+        :timeout => timeout,
         :auto_commit => auto_commit
       )
     end
@@ -215,6 +235,18 @@ module SolrPowered
   def self.host= host
     client.host = host
     @@host = host
+  end
+
+  def self.timeout= timeout
+    client.timeout = timeout
+    @@timeout = timeout
+  end
+
+  def self.with_timeout timeout, &block
+    old_timeout = @@timeout
+    self.timeout = timeout
+    yield
+    self.timeout = old_timeout
   end
 
   # The port number the solr server runs on, defaults to 8982
@@ -288,36 +320,47 @@ module SolrPowered
     end
   end
 
-  def self.batch &block
-    unless self.batching?
-      @@add = {}
-      @@remove = {}
-    end
+  def self.batch options = {}, &block
     begin
-      @@batch_depth += 1
+      @@batch_add_stack << Hash.new
+      @@batch_remove_stack << Hash.new
       yield 
-    ensure
-      @@batch_depth -= 1
-      unless self.batching?
-        client.add(*@@add.values)
-        client.delete(*@@remove.keys)
-        @@add = {}
-        @@remove = {}
+
+    rescue
+      # if this batch represents a transaction, on any exception we will 
+      # clear out the entire batch, this allows us to safely nest batches
+      if options[:transaction]
+        @@batch_add_stack.last = {}
+        @@batch_remove_stack.last = {}
       end
+      raise
+
+    ensure
+      add = @@batch_add_stack.pop
+      remove = @@batch_remove_stack.pop
+      if self.batching? 
+        # still batching, merge the pop'd add/remove to the top of their stacks
+        self.add(*add.values)
+        self.delete(*remove.keys)
+      else
+        # no longer batching, the stacks are empty, push changes to solr
+        client.add(*add.values) unless add.count == 0
+        client.delete(*remove.keys) unless remove.count == 0
+      end
+
     end
   end
 
   def self.batching?
-    @@batch_depth ||= 0
-    @@batch_depth > 0 
+    @@batch_add_stack.count > 0
   end
 
   def self.add *solr_document_hashes
     if self.batching?
       solr_document_hashes.each do |document|
         solr_id = document['solr_id']
-        @@add[solr_id] = document
-        @@remove.delete(solr_id)
+        @@batch_add_stack.last[solr_id] = document
+        @@batch_remove_stack.last.delete(solr_id)
       end
     else
       client.add(*solr_document_hashes)
@@ -327,8 +370,8 @@ module SolrPowered
   def self.delete *solr_id_strings
     if self.batching?
       solr_id_strings.each do |solr_id|
-        @@remove[solr_id] = true
-        @@add.delete(solr_id)
+        @@batch_remove_stack.last[solr_id] = true
+        @@batch_add_stack.last.delete(solr_id)
       end
     else
       client.delete(*solr_id_strings)

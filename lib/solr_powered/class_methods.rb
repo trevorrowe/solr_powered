@@ -128,48 +128,59 @@ module SolrPowered::ClassMethods
   # to be indexed.  To speed up indexing, it will perform a :include (eager
   # load) for every indexed association
   def solr_reindex options = {}
+    SolrPowered.with_timeout(1800) {
 
-    if options[:delete_first] != false
-      # remove ALL of this class' records from the solr index
-      SolrPowered.client.delete_all("solr_type:#{solr_type}")
-    end
+      if options[:delete_first] != false
+        # remove ALL of this class' records from the solr index
+        SolrPowered.client.delete_all("solr_type:#{solr_type}")
+      end
 
-    # ActiveRecord handles STI find in a very odd way.  Given the following
-    # STI setup:
-    #
-    #   Staff < Member < Person < ActiveRecord::Base
-    #
-    # If you perform a find on Member or Staff the find will be scoped with
-    # the type column being the class name which is being searched.  However,
-    # if you perform the same find on Person, instead of scoping where type
-    # would = 'Person', it leaves the type column out, returning all objects
-    # 
-    # This is not desireable as we have different associations, different
-    # solr_attrs, solr_methods and solr_assocs in each of the inherited 
-    # classes, we need to eager load different columns, create different
-    # documents, etc.
-    # 
-    # Therefor we ALWAYS add the class name (when type is present) to the
-    # find.  This does result in a douple tpye condition in some STI
-    # queries, but that is preferable to the alternative of not scoping.
-    if self.column_names.include?('type')
-      cond = ["#{self.table_name}.type = ?", self.to_s]
-    end
+      # ActiveRecord handles STI find in a very odd way.  Given the following
+      # STI setup:
+      #
+      #   Staff < Member < Person < ActiveRecord::Base
+      #
+      # If you perform a find on Member or Staff the find will be scoped with
+      # the type column being the class name which is being searched.  However,
+      # if you perform the same find on Person, instead of scoping where type
+      # would = 'Person', it leaves the type column out, returning all objects
+      # 
+      # This is not desireable as we have different associations, different
+      # solr_attrs, solr_methods and solr_assocs in each of the inherited 
+      # classes, we need to eager load different columns, create different
+      # documents, etc.
+      # 
+      # Therefor we ALWAYS add the class name (when type is present) to the
+      # find.  This does result in a douple tpye condition in some STI
+      # queries, but that is preferable to the alternative of not scoping.
+      if self.column_names.include?('type')
+        cond = ["#{self.table_name}.type = ?", self.to_s]
+      end
 
-    # re-index the records, one large chunk at a time
-    page = 0
-    batch_size = options[:batch_size] || 1000
-    begin
-      objects = find(:all,
+      # re-index the records, one large chunk at a time
+      find_in_batches(
         :conditions => cond,
-        :include => self.solr_eager_loaded_associations,
-        :limit => batch_size, 
-        :offset => page * batch_size
-      )
-      documents = objects.select(&:solr_saveable?).collect(&:solr_document)
-      SolrPowered.client.add(*documents) unless documents.empty?
-      page += 1
-    end until objects.length != batch_size
+        :include => self.solr_eager_loaded_associations
+      ) do |objects|
+        documents = objects.select(&:solr_saveable?).collect(&:solr_document)
+        SolrPowered.client.add(*documents) unless documents.empty?
+      end
+
+#       page = 0
+#       batch_size = options[:batch_size] || 1000
+#       begin
+#         objects = find(:all,
+#           :conditions => cond,
+#           :include => self.solr_eager_loaded_associations,
+#           :limit => batch_size, 
+#           :offset => page * batch_size
+#         )
+#         documents = objects.select(&:solr_saveable?).collect(&:solr_document)
+#         SolrPowered.client.add(*documents) unless documents.empty?
+#         page += 1
+#       end until objects.length != batch_size
+    }
+
   end
 
   def solr_attr *attribute_names
@@ -322,7 +333,7 @@ module SolrPowered::ClassMethods
     else
       return_association = case association.macro
         when :has_one, :has_many
-          self.to_s.downcase.to_sym
+          self.to_s.underscore.to_sym
         when :belongs_to, :has_and_belongs_to_many
           # this default could be incorrect if the belongs to maps to 
           # a has_one reverse association instead of a has_many
